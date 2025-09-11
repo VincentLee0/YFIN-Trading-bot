@@ -6,6 +6,50 @@ from typing import Tuple, Optional, Literal
 Signal = Literal['BUY', 'SELL', 'HOLD']
 
 
+def get_market_status(ticker: str) -> tuple[bool, str, str]:
+    """
+    Check if the market is open for the given ticker.
+
+    Returns:
+        Tuple of (is_market_open, market_state, next_open_or_close)
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+
+        # Get current time in market's timezone
+        current_time = pd.Timestamp.now(tz=info.get(
+            'exchangeTimezoneName', 'America/New_York'))
+
+        # Get market hours
+        market_open = pd.Timestamp.now(tz=info.get('exchangeTimezoneName', 'America/New_York')).replace(
+            hour=9, minute=30, second=0, microsecond=0
+        )
+        market_close = pd.Timestamp.now(tz=info.get('exchangeTimezoneName', 'America/New_York')).replace(
+            hour=16, minute=0, second=0, microsecond=0
+        )
+
+        is_market_open = market_open <= current_time <= market_close
+
+        # Get next event time
+        if is_market_open:
+            next_event = market_close
+            state = f"OPEN - {info.get('exchange', 'Unknown Exchange')}"
+            next_event_str = f"Closes at {next_event.strftime('%H:%M %Z')}"
+        else:
+            if current_time < market_open:
+                next_event = market_open
+                next_event_str = f"Opens at {next_event.strftime('%H:%M %Z')}"
+            else:
+                next_event = market_open + pd.Timedelta(days=1)
+                next_event_str = f"Opens Tomorrow at {next_event.strftime('%H:%M %Z')}"
+            state = f"CLOSED - {info.get('exchange', 'Unknown Exchange')}"
+
+        return is_market_open, state, next_event_str
+    except Exception as e:
+        return False, "ERROR", str(e)
+
+
 def fetch_stock_data(ticker: str, period: str = "1mo", interval: str = "1d") -> pd.DataFrame:
     """
     Fetch historical stock data from Yahoo Finance.
