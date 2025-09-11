@@ -185,24 +185,26 @@ if portfolio.holdings:
             if qty > 0:  # Long position
                 holdings_value += qty * price
             else:  # Short position
-                short_entry_price = portfolio.short_positions.get(ticker_in_portfolio, price)
+                short_entry_price = portfolio.short_positions.get(
+                    ticker_in_portfolio, price)
                 unrealized_profit = (short_entry_price - price) * abs(qty)
                 margin_held = abs(qty) * price * portfolio.margin_requirement
                 holdings_value += margin_held + unrealized_profit
-        
+
         # Update total value with current prices
         portfolio._update_total_value(prices)
     except Exception as e:
         st.error(f"Error updating portfolio values: {str(e)}")
 else:
-    portfolio._update_total_value({})  # This will set total value equal to cash
+    # This will set total value equal to cash
+    portfolio._update_total_value({})
 
 with col1:
     st.metric("Cash Available", f"${portfolio.cash:.2f}")
 with col2:
     st.metric("Holdings Value", f"${holdings_value:.2f}")
 with col3:
-    st.metric("Total Portfolio Value", f"${portfolio.total_value:.2f}", 
+    st.metric("Total Portfolio Value", f"${portfolio.total_value:.2f}",
               delta=f"${(portfolio.total_value - 10000):+.2f}")
 
 # Position Details Header
@@ -212,7 +214,8 @@ with position_cols[0]:
     long_positions = sum(qty for qty in portfolio.holdings.values() if qty > 0)
     st.metric("Long Positions", f"{long_positions} shares")
 with position_cols[1]:
-    short_positions = sum(abs(qty) for qty in portfolio.holdings.values() if qty < 0)
+    short_positions = sum(abs(qty)
+                          for qty in portfolio.holdings.values() if qty < 0)
     st.metric("Short Positions", f"{short_positions} shares")
 
 # Always update total value with current prices
@@ -251,7 +254,8 @@ with st.expander("Position Details"):
 
 # Display total value after ensuring it's up to date
 st.metric("Total Value", f"${portfolio.total_value:.2f}",
-          delta=f"${(portfolio.total_value - 10000):+.2f}")  # Show actual P&L from initial investment
+          # Show actual P&L from initial investment
+          delta=f"${(portfolio.total_value - 10000):+.2f}")
 
 # Charts
 try:
@@ -415,18 +419,19 @@ with stats_container:
         initial_value = 10000  # Default starting value
         current_value = portfolio.total_value
         profit_loss = current_value - initial_value
-        profit_loss_pct = (profit_loss / initial_value) * 100 if initial_value != 0 else 0
-        
+        profit_loss_pct = (profit_loss / initial_value) * \
+            100 if initial_value != 0 else 0
+
         # Show realized P&L (based on cash changes) when no positions
         if not portfolio.holdings:
             realized_pnl = portfolio.cash - initial_value
             realized_pnl_pct = (realized_pnl / initial_value) * 100
             st.metric("Realized P/L", f"${realized_pnl:.2f}",
-                     f"{realized_pnl_pct:+.2f}%")
+                      f"{realized_pnl_pct:+.2f}%")
         else:
             # Show unrealized P&L when positions are open
             st.metric("Unrealized P/L", f"${profit_loss:.2f}",
-                     f"{profit_loss_pct:+.2f}%")
+                      f"{profit_loss_pct:+.2f}%")
     with stats_col3:
         trades_per_hour = 0
         if st.session_state.start_time:
