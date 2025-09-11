@@ -161,19 +161,20 @@ class Portfolio:
                 "total_value": self.total_value,
                 "short_positions": self.short_positions
             }
-            
+
             # Use a temporary file to avoid corruption
             temp_file = filepath + '.tmp'
             with open(temp_file, 'w') as f:
                 json.dump(state, f)
-            
+
             # Rename temporary file to actual file
             if os.path.exists(filepath):
                 os.remove(filepath)
             os.rename(temp_file, filepath)
-            
+
         except PermissionError as e:
-            raise PermissionError(f"Permission denied when saving to {filepath}. Please check file permissions.") from e
+            raise PermissionError(
+                f"Permission denied when saving to {filepath}. Please check file permissions.") from e
         except Exception as e:
             raise Exception(f"Error saving portfolio state: {str(e)}") from e
 
@@ -197,23 +198,25 @@ class Portfolio:
 
             # Create with 0 since we'll set it from state
             portfolio = cls(initial_cash=0)
-            
+
             # Handle missing or invalid fields by using defaults
             portfolio.cash = float(state.get("cash", 10000.0))
             portfolio.holdings = state.get("holdings", {})
-            portfolio.total_value = float(state.get("total_value", portfolio.cash))
+            portfolio.total_value = float(
+                state.get("total_value", portfolio.cash))
             portfolio.short_positions = state.get("short_positions", {})
-            
+
             # Validate values
             if portfolio.cash < 0:
                 portfolio.cash = 10000.0
             if portfolio.total_value < 0:
                 portfolio.total_value = portfolio.cash
-                
+
             return portfolio
-            
+
         except PermissionError as e:
-            raise PermissionError(f"Permission denied when reading from {filepath}. Please check file permissions.") from e
+            raise PermissionError(
+                f"Permission denied when reading from {filepath}. Please check file permissions.") from e
         except json.JSONDecodeError:
             # If file is corrupted, create new portfolio
             portfolio = cls()

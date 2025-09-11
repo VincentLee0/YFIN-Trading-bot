@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime
@@ -18,15 +19,17 @@ from portfolio_manager import Portfolio
 st.set_page_config(page_title="Trading Bot Simulator", layout="wide")
 
 # Set up portfolio state file path
-import os
-PORTFOLIO_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portfolio_state.json')
+PORTFOLIO_STATE_FILE = os.path.join(os.path.dirname(
+    os.path.abspath(__file__)), 'portfolio_state.json')
 
 # Initialize session state
 if 'portfolio' not in st.session_state:
     try:
-        st.session_state.portfolio = Portfolio.load_portfolio_state(PORTFOLIO_STATE_FILE)
+        st.session_state.portfolio = Portfolio.load_portfolio_state(
+            PORTFOLIO_STATE_FILE)
     except PermissionError:
-        st.error("Permission denied when accessing portfolio state file. Please check file permissions.")
+        st.error(
+            "Permission denied when accessing portfolio state file. Please check file permissions.")
         st.session_state.portfolio = Portfolio(initial_cash=10000.0)
     except Exception as e:
         st.error(f"Error loading portfolio state: {str(e)}")
@@ -167,7 +170,8 @@ with st.sidebar:
                 st.success("Portfolio successfully reset to $10,000")
                 st.rerun()
             except PermissionError as e:
-                st.error(f"Permission denied when resetting portfolio. Please check file permissions.")
+                st.error(
+                    f"Permission denied when resetting portfolio. Please check file permissions.")
             except Exception as e:
                 st.error(f"Error resetting portfolio: {str(e)}")
         else:
