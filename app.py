@@ -17,9 +17,20 @@ from portfolio_manager import Portfolio
 # Page config
 st.set_page_config(page_title="Trading Bot Simulator", layout="wide")
 
+# Set up portfolio state file path
+import os
+PORTFOLIO_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portfolio_state.json')
+
 # Initialize session state
 if 'portfolio' not in st.session_state:
-    st.session_state.portfolio = Portfolio.load_portfolio_state()
+    try:
+        st.session_state.portfolio = Portfolio.load_portfolio_state(PORTFOLIO_STATE_FILE)
+    except PermissionError:
+        st.error("Permission denied when accessing portfolio state file. Please check file permissions.")
+        st.session_state.portfolio = Portfolio(initial_cash=10000.0)
+    except Exception as e:
+        st.error(f"Error loading portfolio state: {str(e)}")
+        st.session_state.portfolio = Portfolio(initial_cash=10000.0)
 if 'trading_active' not in st.session_state:
     st.session_state.trading_active = False
 if 'trade_log' not in st.session_state:
@@ -39,10 +50,93 @@ def add_trade_log(message: str):
     st.session_state.total_trades += 1
 
 
+# Define stock categories
+STOCK_OPTIONS = {
+    "United States (NYSE/NASDAQ)": {
+        "Technology": ["AAPL - Apple Inc.", "MSFT - Microsoft", "GOOGL - Alphabet", "META - Meta Platforms", "NVDA - NVIDIA"],
+        "Finance": ["JPM - JPMorgan Chase", "BAC - Bank of America", "GS - Goldman Sachs", "V - Visa Inc."],
+        "Retail": ["AMZN - Amazon", "WMT - Walmart", "COST - Costco", "TGT - Target"],
+        "Healthcare": ["JNJ - Johnson & Johnson", "PFE - Pfizer", "UNH - UnitedHealth", "ABBV - AbbVie"],
+        "Industrial": ["BA - Boeing", "CAT - Caterpillar", "GE - General Electric", "MMM - 3M Company"]
+    },
+    "United Kingdom (LSE)": {
+        "Finance": ["HSBA.L - HSBC", "BARC.L - Barclays", "LLOY.L - Lloyds Banking", "NWG.L - NatWest Group"],
+        "Energy": ["BP.L - BP", "SHEL.L - Shell", "SSE.L - SSE plc"],
+        "Consumer": ["TSCO.L - Tesco", "ULVR.L - Unilever", "DGE.L - Diageo"],
+        "Healthcare": ["GSK.L - GSK plc", "AZN.L - AstraZeneca", "SN.L - Smith & Nephew"],
+        "Industrial": ["RR.L - Rolls-Royce", "BAE.L - BAE Systems", "CRH.L - CRH plc"]
+    }
+}
+
 # Sidebar controls
 with st.sidebar:
     st.title("Trading Controls")
-    ticker = st.text_input("Stock Ticker", value="AAPL").upper()
+
+    # Initialize selected stocks in session state if not present
+    if 'selected_stocks' not in st.session_state:
+        st.session_state.selected_stocks = set()
+
+    # Market and Stock Selection
+    selected_market = st.selectbox(
+        "Select Market",
+        options=list(STOCK_OPTIONS.keys()),
+        index=0,
+        key="market_selector"
+    )
+
+    selected_sector = st.selectbox(
+        "Select Sector",
+        options=list(STOCK_OPTIONS[selected_market].keys()),
+        index=0,
+        key="sector_selector"
+    )
+
+    # Multi-stock selection
+    available_stocks = STOCK_OPTIONS[selected_market][selected_sector]
+    selected_stock = st.selectbox(
+        "Select Stock",
+        options=available_stocks,
+        index=0,
+        key="stock_selector"
+    )
+
+    # Extract ticker from selection
+    current_ticker = selected_stock.split(" - ")[0].strip()
+
+    # Add/Remove stock buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Add Stock", key="add_stock"):
+            st.session_state.selected_stocks.add(current_ticker)
+    with col2:
+        if st.button("Remove Stock", key="remove_stock"):
+            st.session_state.selected_stocks.discard(current_ticker)
+
+    # Display selected stocks
+    st.subheader("Selected Stocks for Trading")
+    if not st.session_state.selected_stocks:
+        st.warning("No stocks selected. Add stocks to begin trading.")
+    else:
+        for ticker in st.session_state.selected_stocks:
+            st.info(f"🔹 {ticker}")
+
+    # Option to clear all stocks
+    if st.session_state.selected_stocks and st.button("Clear All Stocks", type="secondary"):
+        if not st.session_state.trading_active:
+            st.session_state.selected_stocks.clear()
+            st.rerun()
+        else:
+            st.error("Cannot clear stocks while trading is active")
+
+    # Optional manual ticker input
+    st.divider()
+    st.caption("Or enter ticker manually:")
+    manual_ticker = st.text_input(
+        "Custom Ticker", "", help="Enter any valid ticker symbol")
+    if manual_ticker:
+        manual_ticker = manual_ticker.upper()
+        if st.button("Add Custom Stock"):
+            st.session_state.selected_stocks.add(manual_ticker)
 
     # SMA Parameters
     st.subheader("SMA Parameters")
@@ -57,26 +151,23 @@ with st.sidebar:
     st.subheader("Portfolio Management")
     if st.button("Reset Portfolio to $10,000", type="secondary"):
         if not st.session_state.trading_active:  # Only allow reset when not trading
-            # Create a fresh portfolio
-            new_portfolio = Portfolio(initial_cash=10000.0)
-
-            # Reset all session state
-            st.session_state.portfolio = new_portfolio
-            st.session_state.total_trades = 0
-            st.session_state.trade_log = []
-            st.session_state.last_update = None
-            st.session_state.start_time = None
-
-            # Save the fresh state
             try:
-                # Delete existing file if it exists
-                import os
-                if os.path.exists("portfolio_state.json"):
-                    os.remove("portfolio_state.json")
-                # Save new state
-                new_portfolio.save_portfolio_state()
+                # Create a fresh portfolio
+                new_portfolio = Portfolio(initial_cash=10000.0)
+
+                # Reset all session state
+                st.session_state.portfolio = new_portfolio
+                st.session_state.total_trades = 0
+                st.session_state.trade_log = []
+                st.session_state.last_update = None
+                st.session_state.start_time = None
+
+                # Save the fresh state
+                new_portfolio.save_portfolio_state(PORTFOLIO_STATE_FILE)
                 st.success("Portfolio successfully reset to $10,000")
                 st.rerun()
+            except PermissionError as e:
+                st.error(f"Permission denied when resetting portfolio. Please check file permissions.")
             except Exception as e:
                 st.error(f"Error resetting portfolio: {str(e)}")
         else:
@@ -84,14 +175,23 @@ with st.sidebar:
                 "Cannot reset portfolio while trading is active. Stop trading first.")
 
     # Control buttons
-    is_market_open, _, _ = get_market_status(ticker)
+    # Check if any selected stocks are in open markets
+    markets_status = []
+    if st.session_state.selected_stocks:
+        for stock in st.session_state.selected_stocks:
+            is_open, _, _ = get_market_status(stock)
+            markets_status.append(is_open)
+        any_market_open = any(markets_status)
+    else:
+        any_market_open = False
+
     start_stop_button = st.button(
         "Start Trading" if not st.session_state.trading_active else "Stop Trading",
-        disabled=not is_market_open and not st.session_state.trading_active
+        disabled=not any_market_open and not st.session_state.trading_active
     )
 
-    if not is_market_open and not st.session_state.trading_active:
-        st.warning("⚠️ Cannot start trading when market is closed")
+    if not any_market_open and not st.session_state.trading_active:
+        st.warning("⚠️ Cannot start trading when no selected markets are open")
 
     if start_stop_button:
         st.session_state.trading_active = not st.session_state.trading_active
@@ -145,7 +245,7 @@ st.title("Trading Bot Simulator")
 # Status indicator
 status_container = st.container()
 with status_container:
-    status_cols = st.columns([1, 1, 2])
+    status_cols = st.columns([1, 1])
 
     # Bot Status
     with status_cols[0]:
@@ -159,14 +259,6 @@ with status_container:
         if st.session_state.last_update:
             st.info(
                 f"Last Update: {st.session_state.last_update.strftime('%H:%M:%S')}")
-
-    # Market Status
-    with status_cols[2]:
-        is_market_open, market_state, next_event = get_market_status(ticker)
-        if is_market_open:
-            st.success(f"📈 Market {market_state} | {next_event}")
-        else:
-            st.warning(f"📉 Market {market_state} | {next_event}")
 
 # Portfolio metrics
 col1, col2, col3 = st.columns(3)
@@ -256,157 +348,193 @@ with st.expander("Position Details"):
 st.metric("Total Value", f"${portfolio.total_value:.2f}",
           # Show actual P&L from initial investment
           delta=f"${(portfolio.total_value - 10000):+.2f}")
-
-# Charts
-try:
-    # Fetch data with error handling
+# Charts and Analysis
+if not st.session_state.selected_stocks:
+    st.warning("Please select stocks to display charts")
+else:
     try:
-        # Get 1-day data with 1-minute intervals
-        data = fetch_stock_data(ticker, "1d", "1m")
-        if data.empty:
-            st.error(
-                f"No data available for {ticker}. Please check the ticker symbol.")
-            st.stop()
+        for current_ticker in st.session_state.selected_stocks:
+            with st.expander(f"{current_ticker} Chart", expanded=True):
+                try:
+                    # Get 1-day data with 1-minute intervals
+                    data = fetch_stock_data(current_ticker, "1d", "1m")
+                    if data.empty:
+                        st.error(f"No data available for {current_ticker}")
+                        continue
+
+                    # Calculate indicators for this stock
+                    short_sma = calculate_sma(data, short_window)
+                    long_sma = calculate_sma(data, long_window)
+                    volatility = calculate_volatility(data)
+                    signal = generate_signal(short_sma, long_sma)
+
+                    # Market status for this stock
+                    is_market_open, market_state, next_event = get_market_status(
+                        current_ticker)
+                    market_status = "🟢 Market Open" if is_market_open else "🔴 Market Closed"
+                    st.write(f"Market Status: {market_status} | {next_event}")
+
+                    # Create price chart
+                    fig = go.Figure()
+
+                    # Candlestick chart
+                    fig.add_trace(go.Candlestick(
+                        x=data.index,
+                        open=data['Open'],
+                        high=data['High'],
+                        low=data['Low'],
+                        close=data['Close'],
+                        name='Price'
+                    ))
+
+                    # Add SMAs
+                    fig.add_trace(go.Scatter(
+                        x=data.index,
+                        y=short_sma,
+                        name=f'SMA {short_window}',
+                        line=dict(color='blue')
+                    ))
+
+                    fig.add_trace(go.Scatter(
+                        x=data.index,
+                        y=long_sma,
+                        name=f'SMA {long_window}',
+                        line=dict(color='orange')
+                    ))
+
+                    fig.update_layout(
+                        title=f"{current_ticker} Price and SMA",
+                        yaxis_title="Price",
+                        xaxis_title="Time",
+                        width=800,
+                        height=500,
+                        margin=dict(l=50, r=50, t=50, b=50),
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        xaxis=dict(
+                            showgrid=True,
+                            gridcolor='rgba(128,128,128,0.2)',
+                            showline=True,
+                            linewidth=1,
+                            linecolor='rgba(128,128,128,0.2)'
+                        ),
+                        yaxis=dict(
+                            showgrid=True,
+                            gridcolor='rgba(128,128,128,0.2)',
+                            showline=True,
+                            linewidth=1,
+                            linecolor='rgba(128,128,128,0.2)'
+                        )
+                    )
+
+                    # Display chart
+                    st.plotly_chart(fig, use_container_width=True,
+                                    config={'displayModeBar': False})
+
+                    # Display stock metrics
+                    metric_cols = st.columns(4)
+                    with metric_cols[0]:
+                        st.metric("Current Price",
+                                  f"${data['Close'].iloc[-1]:.2f}")
+                    with metric_cols[1]:
+                        st.metric("Volatility", f"{volatility:.4f}")
+                    with metric_cols[2]:
+                        signal_color = {
+                            'BUY': 'green',
+                            'SELL': 'red',
+                            'HOLD': 'gray'
+                        }[signal]
+                        st.markdown(
+                            f"<h3 style='color: {signal_color}'>Signal: {signal}</h3>",
+                            unsafe_allow_html=True
+                        )
+                    with metric_cols[3]:
+                        position = portfolio.get_position(current_ticker)
+                        position_type = "LONG" if position > 0 else "SHORT" if position < 0 else "NONE"
+                        st.metric(
+                            "Position", f"{abs(position) if position else 0} shares {position_type}")
+
+                except Exception as e:
+                    st.error(f"Error analyzing {current_ticker}: {str(e)}")
+                    continue
+
     except Exception as e:
-        st.error(f"Error fetching data for {ticker}: {str(e)}")
-        st.stop()
+        st.error(f"Error displaying charts: {str(e)}")
 
-    # Calculate indicators
-    short_sma = calculate_sma(data, short_window)
-    long_sma = calculate_sma(data, long_window)
-
-    # Create price chart
-    fig = go.Figure()
-
-    # Candlestick chart
-    fig.add_trace(go.Candlestick(
-        x=data.index,
-        open=data['Open'],
-        high=data['High'],
-        low=data['Low'],
-        close=data['Close'],
-        name='Price'
-    ))
-
-    # Add SMAs
-    fig.add_trace(go.Scatter(
-        x=data.index,
-        y=short_sma,
-        name=f'SMA {short_window}',
-        line=dict(color='blue')
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=data.index,
-        y=long_sma,
-        name=f'SMA {long_window}',
-        line=dict(color='orange')
-    ))
-
-    fig.update_layout(
-        title=f"{ticker} Price and SMA",
-        yaxis_title="Price",
-        xaxis_title="Time",
-        width=800,  # Set fixed width
-        height=500,  # Set fixed height
-        margin=dict(l=50, r=50, t=50, b=50),  # Adjust margins
-        paper_bgcolor='rgba(0,0,0,0)',  # Transparent background
-        plot_bgcolor='rgba(0,0,0,0)',   # Transparent plot area
-        xaxis=dict(
-            showgrid=True,
-            gridcolor='rgba(128,128,128,0.2)',
-            showline=True,
-            linewidth=1,
-            linecolor='rgba(128,128,128,0.2)'
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor='rgba(128,128,128,0.2)',
-            showline=True,
-            linewidth=1,
-            linecolor='rgba(128,128,128,0.2)'
-        )
-    )
-
-    # Create a container with custom width
-    container = st.container()
-    with container:
-        st.plotly_chart(fig, use_container_width=True, config={
-                        'displayModeBar': False}, key="stock_chart")
-
-    # Trading information display
-    current_price = data['Close'].iloc[-1]
-    volatility = calculate_volatility(data)
-    signal = generate_signal(short_sma, long_sma)
-
-    # Display current market information
-    market_info_container = st.container()
-    with market_info_container:
-        market_col1, market_col2, market_col3, market_col4 = st.columns(4)
-        with market_col1:
-            st.metric("Current Price", f"${current_price:.2f}")
-        with market_col2:
-            st.metric("Volatility", f"{volatility:.4f}")
-        with market_col3:
-            signal_color = {
-                'BUY': 'green',
-                'SELL': 'red',
-                'HOLD': 'gray'
-            }[signal]
-            st.markdown(
-                f"<h3 style='color: {signal_color}'>Signal: {signal}</h3>", unsafe_allow_html=True)
-        with market_col4:
-            if st.session_state.start_time:
-                runtime = datetime.now() - st.session_state.start_time
-                st.metric(
-                    "Running Time", f"{runtime.seconds//3600}h {(runtime.seconds % 3600)//60}m {runtime.seconds % 60}s")
-
-    # Trading logic
-    if st.session_state.trading_active:
-        # Update last_update timestamp
+# Trading logic and execution
+if st.session_state.trading_active and st.session_state.selected_stocks:
+    try:
+        # Update timestamps
         st.session_state.last_update = datetime.now()
-
-        # Initialize start_time if not set
         if not st.session_state.start_time:
             st.session_state.start_time = datetime.now()
 
-        if signal != 'HOLD':
-            position = portfolio.get_position(ticker)
-            cash_to_invest = portfolio.cash * 0.5  # Use 50% of available cash
-            shares = calculate_position_size(
-                cash_to_invest, current_price, volatility, risk_factor
-            )
+        # Display runtime
+        if st.session_state.start_time:
+            runtime = datetime.now() - st.session_state.start_time
+            hours = runtime.seconds // 3600
+            minutes = (runtime.seconds % 3600) // 60
+            seconds = runtime.seconds % 60
+            st.info(f"Runtime: {hours:02d}:{minutes:02d}:{seconds:02d}")
 
-            if signal == 'BUY':
-                # If we have a short position, close it first
-                if position < 0:
-                    if portfolio.execute_buy(ticker, abs(position), current_price):
-                        add_trade_log(
-                            f"COVER SHORT: {abs(position)} shares of {ticker} at ${current_price:.2f}"
-                        )
-                # Then open or add to long position
-                if shares > 0 and portfolio.execute_buy(ticker, shares, current_price):
-                    add_trade_log(
-                        f"BUY LONG: {shares} shares of {ticker} at ${current_price:.2f}"
+        # Calculate cash per stock
+        num_stocks = len(st.session_state.selected_stocks)
+        cash_per_stock = portfolio.cash / num_stocks
+
+        # Process each selected stock
+        for active_ticker in st.session_state.selected_stocks:
+            try:
+                # Fetch data for current stock
+                stock_data = fetch_stock_data(active_ticker, "1d", "1m")
+                current_price = stock_data['Close'].iloc[-1]
+
+                # Calculate indicators
+                stock_short_sma = calculate_sma(stock_data, short_window)
+                stock_long_sma = calculate_sma(stock_data, long_window)
+                stock_volatility = calculate_volatility(stock_data)
+                stock_signal = generate_signal(stock_short_sma, stock_long_sma)
+
+                if stock_signal != 'HOLD':
+                    position = portfolio.get_position(active_ticker)
+                    # Use equal portion of cash for each stock
+                    shares = calculate_position_size(
+                        cash_per_stock, current_price, stock_volatility, risk_factor
                     )
-            else:  # SELL
-                # If we have a long position, close it first
-                if position > 0:
-                    if portfolio.execute_sell(ticker, position, current_price):
-                        add_trade_log(
-                            f"SELL LONG: {position} shares of {ticker} at ${current_price:.2f}"
-                        )
-                # Then open or add to short position
-                if shares > 0 and portfolio.execute_sell(ticker, shares, current_price, allow_short=True):
-                    add_trade_log(
-                        f"SELL SHORT: {shares} shares of {ticker} at ${current_price:.2f}"
-                    )
+
+                    if stock_signal == 'BUY':
+                        # If we have a short position, close it first
+                        if position < 0:
+                            if portfolio.execute_buy(active_ticker, abs(position), current_price):
+                                add_trade_log(
+                                    f"COVER SHORT: {abs(position)} shares of {active_ticker} at ${current_price:.2f}"
+                                )
+                        # Then open or add to long position
+                        if shares > 0 and portfolio.execute_buy(active_ticker, shares, current_price):
+                            add_trade_log(
+                                f"BUY LONG: {shares} shares of {active_ticker} at ${current_price:.2f}"
+                            )
+                    else:  # SELL
+                        # If we have a long position, close it first
+                        if position > 0:
+                            if portfolio.execute_sell(active_ticker, position, current_price):
+                                add_trade_log(
+                                    f"SELL LONG: {position} shares of {active_ticker} at ${current_price:.2f}"
+                                )
+                        # Then open or add to short position
+                        if shares > 0 and portfolio.execute_sell(active_ticker, shares, current_price, allow_short=True):
+                            add_trade_log(
+                                f"SELL SHORT: {shares} shares of {active_ticker} at ${current_price:.2f}"
+                            )
+
+            except Exception as e:
+                st.error(f"Error trading {active_ticker}: {str(e)}")
+                continue
 
         portfolio.save_portfolio_state()
         st.rerun()
 
-except Exception as e:
-    st.error(f"Error: {str(e)}")
+    except Exception as e:
+        st.error(f"Error in trading execution: {str(e)}")
 
 # Trading Statistics
 stats_container = st.container()

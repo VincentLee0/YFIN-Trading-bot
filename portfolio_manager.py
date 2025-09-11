@@ -150,29 +150,74 @@ class Portfolio:
 
     def save_portfolio_state(self, filepath: str = "portfolio_state.json") -> None:
         """Save the current portfolio state to a JSON file."""
-        state = {
-            "cash": self.cash,
-            "holdings": self.holdings,
-            "total_value": self.total_value,
-            "short_positions": self.short_positions
-        }
-        with open(filepath, 'w') as f:
-            json.dump(state, f)
+        try:
+            # Ensure the directory exists
+            directory = os.path.dirname(os.path.abspath(filepath))
+            os.makedirs(directory, exist_ok=True)
+
+            state = {
+                "cash": self.cash,
+                "holdings": self.holdings,
+                "total_value": self.total_value,
+                "short_positions": self.short_positions
+            }
+            
+            # Use a temporary file to avoid corruption
+            temp_file = filepath + '.tmp'
+            with open(temp_file, 'w') as f:
+                json.dump(state, f)
+            
+            # Rename temporary file to actual file
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            os.rename(temp_file, filepath)
+            
+        except PermissionError as e:
+            raise PermissionError(f"Permission denied when saving to {filepath}. Please check file permissions.") from e
+        except Exception as e:
+            raise Exception(f"Error saving portfolio state: {str(e)}") from e
 
     @classmethod
     def load_portfolio_state(cls, filepath: str = "portfolio_state.json") -> 'Portfolio':
         """Load portfolio state from a JSON file or create a new portfolio if file doesn't exist."""
-        if not os.path.exists(filepath):
-            return cls()
+        try:
+            if not os.path.exists(filepath):
+                # Create new portfolio and save it
+                portfolio = cls()
+                portfolio.save_portfolio_state(filepath)
+                return portfolio
 
-        with open(filepath, 'r') as f:
-            state = json.load(f)
+            with open(filepath, 'r') as f:
+                content = f.read().strip()
+                if not content:  # Empty file
+                    portfolio = cls()
+                    portfolio.save_portfolio_state(filepath)
+                    return portfolio
+                state = json.loads(content)
 
-        # Create with 0 since we'll set it from state
-        portfolio = cls(initial_cash=0)
-        portfolio.cash = state["cash"]
-        portfolio.holdings = state["holdings"]
-        portfolio.total_value = state["total_value"]
-        portfolio.short_positions = state.get(
-            "short_positions", {})  # Backward compatibility
-        return portfolio
+            # Create with 0 since we'll set it from state
+            portfolio = cls(initial_cash=0)
+            
+            # Handle missing or invalid fields by using defaults
+            portfolio.cash = float(state.get("cash", 10000.0))
+            portfolio.holdings = state.get("holdings", {})
+            portfolio.total_value = float(state.get("total_value", portfolio.cash))
+            portfolio.short_positions = state.get("short_positions", {})
+            
+            # Validate values
+            if portfolio.cash < 0:
+                portfolio.cash = 10000.0
+            if portfolio.total_value < 0:
+                portfolio.total_value = portfolio.cash
+                
+            return portfolio
+            
+        except PermissionError as e:
+            raise PermissionError(f"Permission denied when reading from {filepath}. Please check file permissions.") from e
+        except json.JSONDecodeError:
+            # If file is corrupted, create new portfolio
+            portfolio = cls()
+            portfolio.save_portfolio_state(filepath)
+            return portfolio
+        except Exception as e:
+            raise Exception(f"Error loading portfolio state: {str(e)}") from e
