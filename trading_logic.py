@@ -1,9 +1,15 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import time
 from typing import Tuple, Optional, Literal
+from rate_limiter import RateLimiter
 
 Signal = Literal['BUY', 'SELL', 'HOLD']
+
+# Create rate limiters for different API endpoints
+MARKET_STATUS_LIMITER = RateLimiter(max_requests=2, time_window=1)
+DATA_FETCH_LIMITER = RateLimiter(max_requests=2, time_window=1)
 
 
 def get_market_status(ticker: str) -> tuple[bool, str, str]:
@@ -14,6 +20,10 @@ def get_market_status(ticker: str) -> tuple[bool, str, str]:
         Tuple of (is_market_open, market_state, next_open_or_close)
     """
     try:
+        # Wait for rate limit
+        MARKET_STATUS_LIMITER.wait_if_needed()
+
+        # Make the request
         stock = yf.Ticker(ticker)
         info = stock.info
 

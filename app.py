@@ -481,6 +481,39 @@ if st.session_state.trading_active and st.session_state.selected_stocks:
             seconds = runtime.seconds % 60
             st.info(f"Runtime: {hours:02d}:{minutes:02d}:{seconds:02d}")
 
+        # Check for markets closing soon and close positions if needed
+        portfolio = st.session_state.portfolio
+        # Create a copy of keys to avoid modification during iteration
+        for ticker in list(portfolio.holdings.keys()):
+            try:
+                is_open, market_state, next_event = get_market_status(ticker)
+                if is_open and "market closes in" in next_event.lower():
+                    # Extract minutes until close from the next_event string
+                    time_str = next_event.lower().split(
+                        "market closes in")[1].strip()
+                    minutes_to_close = 0
+                    if "hour" in time_str:
+                        hours = int(time_str.split()[0])
+                        minutes_to_close = hours * 60
+                    elif "minute" in time_str:
+                        minutes_to_close = int(time_str.split()[0])
+
+                    # If market closes in 10 minutes or less, close all positions for this stock
+                    if minutes_to_close <= 10:
+                        position = portfolio.get_position(ticker)
+                        if position != 0:  # If we have any position
+                            stock_data = fetch_stock_data(ticker, "1d", "1m")
+                            close_price = stock_data['Close'].iloc[-1]
+                            position_type = "LONG" if position > 0 else "SHORT"
+                            if portfolio.close_all_positions(ticker, close_price):
+                                add_trade_log(
+                                    f"PRE-CLOSE: Closed {position_type} position: {abs(position)} shares of {ticker} at ${close_price:.2f}"
+                                )
+
+            except Exception as e:
+                st.error(f"Error checking market close for {ticker}: {str(e)}")
+                continue
+
         # Calculate cash per stock
         num_stocks = len(st.session_state.selected_stocks)
         cash_per_stock = portfolio.cash / num_stocks
